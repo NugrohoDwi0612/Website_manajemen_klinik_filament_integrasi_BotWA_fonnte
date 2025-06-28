@@ -466,7 +466,7 @@ class FonnteWebhookController extends Controller
                     $janji_id = $data['id_janji_batal'];
                     $janji = Janji::find($janji_id);
                     if ($janji) {
-                        $janji->update(['status' => 'dibatalkan']);
+                        $janji->update(['status' => 'batal']);
                         $session->delete();
                         return "✅ Janji temu dengan ID *{$janji_id}* berhasil dibatalkan.";
                     } else {
@@ -666,11 +666,11 @@ class FonnteWebhookController extends Controller
         switch ($status) {
             case 'menunggu_konfirmasi':
                 return 'Menunggu Konfirmasi';
-            case 'dikonfirmasi':
-                return 'Dikonfirmasi';
+            case 'terjadwal':
+                return 'Terjadwal';
             case 'selesai':
                 return 'Selesai';
-            case 'dibatalkan':
+            case 'batal':
                 return 'Dibatalkan';
             default:
                 return ucfirst($status);
