@@ -4,7 +4,9 @@ namespace Database\Seeders;
 
 use App\Models\Pasien;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Faker\Factory as Faker;
 
 class PasienSeeder extends Seeder
 {
@@ -13,22 +15,18 @@ class PasienSeeder extends Seeder
      */
     public function run(): void
     {
-        Pasien::create([
-            'nama' => 'John Doe',
-            'tanggal_lahir' => '1990-01-01',
-            'jenis_kelamin' => 'Laki-laki',
-            'alamat' => 'Jl. Contoh No. 123',
-            'nomor_telepon' => '081234567890',
-            'email' => 'john.doe@example.com',
-        ]);
+        $faker = Faker::create('id_ID'); // Menggunakan Faker Indonesia
 
-        Pasien::create([
-            'nama' => 'Jane Smith',
-            'tanggal_lahir' => '1985-05-15',
-            'jenis_kelamin' => 'Perempuan',
-            'alamat' => 'Jl. Contoh No. 456',
-            'nomor_telepon' => '081298765432',
-            'email' => 'jane.smith@example.com',
-        ]);
+        for ($i = 0; $i < 20; $i++) { // Membuat 20 data pasien
+            DB::table('pasiens')->insert([
+                'nama' => $faker->name,
+                'tanggal_lahir' => $faker->dateTimeBetween('-60 years', '-1 year')->format('Y-m-d'),
+                'jenis_kelamin' => $faker->randomElement(['L', 'P']),
+                'alamat' => $faker->address,
+                'nomor_telepon' => $faker->phoneNumber,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
     }
 }

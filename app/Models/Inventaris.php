@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Inventaris extends Model
 {
@@ -21,7 +22,7 @@ class Inventaris extends Model
     ];
 
     // Relasi ke Poliklinik
-    public function poliklinik()
+    public function poliklinik(): BelongsTo
     {
         return $this->belongsTo(Poliklinik::class, 'id_poliklinik');
     }

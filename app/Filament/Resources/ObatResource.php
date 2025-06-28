@@ -40,9 +40,11 @@ class ObatResource extends Resource
                     ->numeric()
                     ->default(0),
                 Forms\Components\DatePicker::make('tanggal_kadaluarsa')
+                    ->required()
                     ->nullable()
                     ->minDate(now()),
                 Forms\Components\TextInput::make('kategori_obat')
+                    ->required()
                     ->maxLength(100)
                     ->nullable(),
             ]);

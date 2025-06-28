@@ -62,17 +62,27 @@ class FonnteWebhookController extends Controller
 
     private function processMessage(string $sender, string $rawMessage, string $message): string
     {
-        // Cek jika ingin mengecek antrian
-        if (str_contains($message, 'antrian') || str_contains($message, 'cek antrian')) {
-            preg_match_all('/\d+/', $message, $matches);
-            $numbers = $matches[0] ?? [];
-            return $this->handleCekAntrian($numbers);
+        // Cek jika ingin mengecek jadwal dokter hari ini (BARU DITAMBAH)
+        if (str_contains($message, 'cek jadwal dokter hari ini') || str_contains($message, 'jadwal dokter hari ini')) {
+            return $this->handleCekJadwalDokterHariIni();
         }
 
-        // --- TAMBAHKAN KEMBALI BLOK INI ---
+        // Cek jika ingin mengecek antrian
+        if (str_contains($message, 'antrian') || str_contains($message, 'cek antrian')) {
+            if (str_contains($message, 'antrian saya') || str_contains($message, 'cek antrian saya')) {
+                return $this->handleCekAntrianBySender($sender);
+            } elseif (str_contains($message, 'antrian menunggu') || str_contains($message, 'cek antrian menunggu')) {
+                return $this->handleCekAntrianMenunggu();
+            } elseif (str_contains($message, 'antrian hari ini') || str_contains($message, 'cek antrian hari ini')) {
+                return $this->handleCekAntrianHariIni();
+            } else {
+                return $this->handleFallback();
+            }
+        }
+
         // Cek jika ingin mengecek janji temu
         if (str_contains($message, 'cek janji') || str_contains($message, 'janji saya')) {
-            return $this->handleCekJanji($sender, $rawMessage);
+            return $this->handleCekJanjiBySender($sender);
         }
 
         // Cek jika ingin membatalkan janji temu
@@ -84,7 +94,6 @@ class FonnteWebhookController extends Controller
             return "❌ Pembatalan janji temu dimulai.\n"
                 . "Silakan masukkan *ID Janji Temu* yang ingin Anda batalkan, atau ketik *LIHAT JANJI* untuk melihat janji Anda.";
         }
-        // ------------------------------------
 
         // Cek session pendaftaran atau janji temu
         $session = PendaftaranSession::where('nomor_wa', $sender)->first();
@@ -123,7 +132,6 @@ class FonnteWebhookController extends Controller
 
     private function lanjutkanPendaftaran(PendaftaranSession $session, string $message): string
     {
-        // ... (Kode ini sama persis dengan sebelumnya, tidak ada perubahan)
         $data = $session->data ?? [];
         $tahap = $session->tahap;
 
@@ -256,10 +264,8 @@ class FonnteWebhookController extends Controller
                 $session->update(['tahap' => 'janji_dokter', 'data' => $data]);
                 Log::info('DEBUG: Tanggal janji valid, data diperbarui. Mencari jadwal dokter.');
 
-                // Gunakan JadwalDokter karena itu model untuk tabel jadwal_dokters
                 $jadwals = JadwalDokter::with('dokter')
                     ->where('tanggal', $message)
-                    // ->where('status', 'aktif') // Tetap komen ini karena kolom 'status' tidak ada
                     ->get();
 
                 Log::info('DEBUG: Hasil query jadwal: ' . $jadwals->count() . ' jadwal ditemukan.');
@@ -272,7 +278,7 @@ class FonnteWebhookController extends Controller
                 $listDokterJadwal = "🗓️ *Jadwal Dokter Tersedia pada {$message}:*\n";
                 foreach ($jadwals as $jadwal) {
                     if ($jadwal->dokter) {
-                        $listDokterJadwal .= "- *dr. {$jadwal->dokter->nama}* ({$jadwal->jam_mulai}-{$jadwal->jam_selesai})\n";
+                        $listDokterJadwal .= "- *Dr. {$jadwal->dokter->nama}* ({$jadwal->jam_mulai}-{$jadwal->jam_selesai})\n";
                     } else {
                         Log::warning('DEBUG: Jadwal ID ' . $jadwal->id . ' tidak memiliki relasi dokter.');
                     }
@@ -282,11 +288,10 @@ class FonnteWebhookController extends Controller
                 Log::info('DEBUG: List jadwal dokter berhasil dibuat. Mengirim balasan.');
                 return $listDokterJadwal;
 
-            case 'janji_dokter': // Disini kita akan mencari Jadwal spesifik
+            case 'janji_dokter':
                 Log::info('DEBUG: Masuk ke tahap janji_dokter. Pesan: ' . $message);
                 $tanggal_janji = $data['tanggal_janji'];
 
-                // Cari dokter berdasarkan nama
                 $dokter = Dokter::where('nama', 'LIKE', '%' . $message . '%')->first();
                 if (!$dokter) {
                     Log::warning('DEBUG: Dokter tidak ditemukan untuk nama: ' . $message);
@@ -294,11 +299,8 @@ class FonnteWebhookController extends Controller
                 }
                 Log::info('DEBUG: Dokter ditemukan: ' . $dokter->nama);
 
-                // Cari jadwal spesifik untuk dokter tersebut pada tanggal janji
-                // Gunakan JadwalDokter karena itu model untuk tabel jadwal_dokters
-                $jadwal = JadwalDokter::where('id_dokter', $dokter->id) // Pastikan ini 'dokter_id' sesuai DB Anda
+                $jadwal = JadwalDokter::where('id_dokter', $dokter->id)
                     ->where('tanggal', $tanggal_janji)
-                    // ->where('status', 'aktif') // Tetap komen ini
                     ->first();
 
                 if (!$jadwal) {
@@ -309,13 +311,13 @@ class FonnteWebhookController extends Controller
 
                 $data['id_dokter'] = $dokter->id;
                 $data['nama_dokter'] = $dokter->nama;
-                $data['id_jadwal_dokter'] = $jadwal->id; // <-- Kunci ini harus konsisten!
+                $data['id_jadwal_dokter'] = $jadwal->id;
                 $data['jam_mulai_jadwal'] = $jadwal->jam_mulai;
                 $data['jam_selesai_jadwal'] = $jadwal->jam_selesai;
 
                 $session->update(['tahap' => 'janji_keluhan', 'data' => $data]);
                 Log::info('DEBUG: Tahap janji_dokter selesai. Pindah ke janji_keluhan.');
-                return "Anda akan membuat janji dengan *dr. {$dokter->nama}* pada tanggal *{$tanggal_janji}* pukul *{$jadwal->jam_mulai} - {$jadwal->jam_selesai}*.\n"
+                return "Anda akan membuat janji dengan *Dr. {$dokter->nama}* pada tanggal *{$tanggal_janji}* pukul *{$jadwal->jam_mulai} - {$jadwal->jam_selesai}*.\n"
                     . "Silakan masukkan *keluhan singkat* atau alasan janji temu:";
 
             case 'janji_keluhan':
@@ -350,7 +352,7 @@ class FonnteWebhookController extends Controller
                     try {
                         Janji::create([
                             'id_pasien' => $data['id_pasien'],
-                            'id_jadwal_dokter' => $data['id_jadwal_dokter'], // <-- GUNAKAN KUNCI YANG KONSISTEN!
+                            'id_jadwal_dokter' => $data['id_jadwal_dokter'],
                             'keluhan' => $data['keluhan'],
                             'status' => 'menunggu_konfirmasi',
                         ]);
@@ -373,273 +375,338 @@ class FonnteWebhookController extends Controller
 
             default:
                 $session->delete();
-                Log::warning('DEBUG: Sesi janji temu tidak valid. Tahap: ' . $tahap);
+                Log::warning('DEBUG: Sesi janji temu tidak valid. Tahap tidak dikenali: ' . $tahap);
                 return "⚠️ Sesi tidak valid. Ketik *buat janji* untuk memulai ulang.";
         }
     }
 
     private function lanjutkanPembatalanJanji(PendaftaranSession $session, string $message): string
     {
-        Log::info('DEBUG: Masuk ke lanjutkanPembatalanJanji. Tahap: ' . $session->tahap . ', Pesan: ' . $message);
-
         $data = $session->data ?? [];
         $tahap = $session->tahap;
-        $normalizedSessionWa = $this->normalizePhoneNumber($session->nomor_wa);
-        $pasien = Pasien::where('nomor_telepon', $normalizedSessionWa)->first();
-
-        if (!$pasien) {
-            $session->delete();
-            return "Maaf, kami tidak dapat menemukan data pasien terkait dengan nomor Anda. Silakan coba lagi atau hubungi admin.";
-        }
 
         switch ($tahap) {
             case 'batal_janji_identifikasi':
-                $janji = null;
-                if (strtolower($message) === 'lihat janji') {
-                    // Jika user ketik 'lihat janji', tampilkan daftar janji aktif
-                    $janjisAktif = Janji::with(['jadwal.dokter'])
+                if (strtolower(trim($message)) === 'lihat janji') {
+                    $sender = $session->nomor_wa;
+                    $pasien = Pasien::where('nomor_telepon', $this->normalizePhoneNumber($sender))->first();
+
+                    if (!$pasien) {
+                        return "Anda belum memiliki data pasien yang terdaftar dengan nomor WhatsApp ini.";
+                    }
+
+                    $janjis = Janji::with(['jadwal.dokter'])
                         ->where('id_pasien', $pasien->id)
-                        ->whereIn('status', ['menunggu_konfirmasi', 'terjadwal']) // Hanya tampilkan yang aktif/bisa dibatalkan
-                        ->orderBy('jadwal_dokters.tanggal', 'asc')
-                        ->orderBy('jadwal_dokters.jam_mulai', 'asc')
-                        ->join('jadwal_dokters', 'janji.id_jadwal_dokter', '=', 'jadwal_dokters.id')
-                        ->select('janji.*')
+                        ->whereIn('status', ['menunggu_konfirmasi', 'dikonfirmasi'])
                         ->get();
 
-                    if ($janjisAktif->isEmpty()) {
-                        $session->delete();
-                        return "Anda tidak memiliki janji temu aktif yang bisa dibatalkan.";
+                    if ($janjis->isEmpty()) {
+                        return "Anda tidak memiliki janji temu yang dapat dibatalkan.";
                     }
 
-                    $listJanji = "📋 *Daftar Janji Temu Aktif Anda:*\n";
-                    foreach ($janjisAktif as $j) {
-                        $tanggal = $j->jadwal ? Carbon::parse($j->jadwal->tanggal)->format('d F Y') : 'N/A';
-                        $jam = $j->jadwal ? "{$j->jadwal->jam_mulai} - {$j->jadwal->jam_selesai}" : 'N/A';
-                        $dokterNama = $j->jadwal && $j->jadwal->dokter ? $j->jadwal->dokter->nama : 'N/A';
-                        $listJanji .= "\nID: *{$j->id}*\nDokter: dr. {$dokterNama}\nTanggal: {$tanggal}\nJam: {$jam}\nKeluhan: {$j->keluhan}\n";
+                    $response = "🗓️ *Daftar Janji Temu Anda:*\n\n";
+                    foreach ($janjis as $janji) {
+                        $dokterNama = $janji->jadwal && $janji->jadwal->dokter ? $janji->jadwal->dokter->nama : 'N/A';
+                        $tanggal = $janji->jadwal ? Carbon::parse($janji->jadwal->tanggal)->format('d F Y') : 'N/A';
+                        $jam = $janji->jadwal ? "{$janji->jadwal->jam_mulai} - {$janji->jadwal->jam_selesai}" : 'N/A';
+
+                        $response .= "--- ID Janji: {$janji->id} ---\n"
+                            . "Dokter: *Dr. {$dokterNama}*\n"
+                            . "Tanggal: *{$tanggal}*\n"
+                            . "Jam: *{$jam}*\n"
+                            . "Keluhan: *{$janji->keluhan}*\n"
+                            . "Status: *{$this->formatStatusJanji($janji->status)}*\n\n";
                     }
-                    $listJanji .= "\nSilakan masukkan *ID Janji Temu* yang ingin Anda batalkan.";
-                    return $listJanji;
+                    $response .= "Silakan masukkan *ID Janji Temu* yang ingin Anda batalkan.";
+                    return $response;
                 } elseif (is_numeric($message)) {
-                    $janji = Janji::with(['jadwal.dokter'])
-                        ->where('id', $message)
-                        ->where('id_pasien', $pasien->id) // Pastikan janji ini milik pasien yang bersangkutan
-                        ->whereIn('status', ['menunggu_konfirmasi', 'terjadwal']) // Hanya yang bisa dibatalkan
-                        ->first();
+                    $janji_id = (int) $message;
+                    $janji = Janji::find($janji_id);
 
                     if (!$janji) {
-                        return "❌ Janji temu dengan ID *{$message}* tidak ditemukan atau tidak dapat dibatalkan (mungkin sudah selesai/dibatalkan oleh admin).\n"
-                            . "Silakan masukkan ID yang benar atau ketik *LIHAT JANJI* untuk daftar janji Anda.";
+                        return "❌ ID Janji Temu tidak ditemukan. Silakan masukkan ID yang valid.";
                     }
-                    $data['id_janji'] = $janji->id;
-                    $data['janji_details'] = [
-                        'tanggal' => $janji->jadwal ? Carbon::parse($janji->jadwal->tanggal)->format('d F Y') : 'N/A',
-                        'jam' => $janji->jadwal ? "{$janji->jadwal->jam_mulai} - {$janji->jadwal->jam_selesai}" : 'N/A',
-                        'dokter' => $janji->jadwal && $janji->jadwal->dokter ? $janji->jadwal->dokter->nama : 'N/A',
+
+                    $sender_normalized = $this->normalizePhoneNumber($session->nomor_wa);
+                    $pasien = Pasien::where('id', $janji->id_pasien)
+                        ->where('nomor_telepon', $sender_normalized)
+                        ->first();
+
+                    if (!$pasien) {
+                        return "❌ Anda tidak memiliki izin untuk membatalkan janji temu ini.";
+                    }
+
+
+                    if (!in_array($janji->status, ['menunggu_konfirmasi', 'dikonfirmasi'])) {
+                        return "❌ Janji temu dengan ID {$janji->id} tidak dapat dibatalkan (status: {$this->formatStatusJanji($janji->status)}).";
+                    }
+
+                    $data['id_janji_batal'] = $janji->id;
+                    $data['janji_detail'] = [
+                        'dokter' => $janji->jadwal->dokter->nama ?? 'N/A',
+                        'tanggal' => Carbon::parse($janji->jadwal->tanggal)->format('d F Y') ?? 'N/A',
+                        'jam' => ($janji->jadwal->jam_mulai ?? 'N/A') . ' - ' . ($janji->jadwal->jam_selesai ?? 'N/A'),
                         'keluhan' => $janji->keluhan,
                     ];
-                    $session->update(['tahap' => 'batal_janji_konfirmasi', 'data' => $data]);
 
-                    $konfirmasiPesan = "Anda akan membatalkan janji temu ini:\n"
-                        . "ID Janji: *{$janji->id}*\n"
-                        . "Dokter: *dr. {$data['janji_details']['dokter']}*\n"
-                        . "Tanggal: *{$data['janji_details']['tanggal']}*\n"
-                        . "Jam: *{$data['janji_details']['jam']}*\n"
-                        . "Keluhan: *{$data['janji_details']['keluhan']}*\n\n"
-                        . "Ketik *YA* untuk konfirmasi pembatalan atau *TIDAK* untuk membatalkan proses.";
-                    return $konfirmasiPesan;
+                    $session->update(['tahap' => 'batal_janji_konfirmasi', 'data' => $data]);
+                    return "Anda yakin ingin membatalkan janji temu ini?\n"
+                        . "Dokter: *Dr. {$data['janji_detail']['dokter']}*\n"
+                        . "Tanggal: *{$data['janji_detail']['tanggal']}*\n"
+                        . "Jam: *{$data['janji_detail']['jam']}*\n"
+                        . "Keluhan: *{$data['janji_detail']['keluhan']}*\n\n"
+                        . "Ketik *YA* untuk konfirmasi atau *BATAL* untuk membatalkan seluruh proses.";
                 } else {
-                    return "❌ Masukkan *ID Janji Temu* yang valid, atau ketik *LIHAT JANJI* untuk melihat daftar janji Anda.";
+                    return "Pilihan tidak valid. Silakan masukkan *ID Janji Temu* atau ketik *LIHAT JANJI*.";
                 }
 
             case 'batal_janji_konfirmasi':
                 $konfirmasi = strtolower(trim($message));
                 if ($konfirmasi === 'ya') {
-                    try {
-                        $janji = Janji::find($data['id_janji']);
-                        if ($janji) {
-                            $janji->status = 'batal'; // Ubah status ke 'dibatalkan'
-                            $janji->save();
-                            $session->delete();
-                            return "✅ Janji temu ID *{$data['id_janji']}* dengan dr. *{$data['janji_details']['dokter']}* pada tanggal *{$data['janji_details']['tanggal']}* telah *DIBATALKAN*.";
-                        } else {
-                            $session->delete();
-                            return "❌ Gagal membatalkan janji temu. Janji tidak ditemukan. Silakan coba lagi.";
-                        }
-                    } catch (\Exception $e) {
-                        Log::error('Gagal membatalkan janji temu: ' . $e->getMessage());
+                    $janji_id = $data['id_janji_batal'];
+                    $janji = Janji::find($janji_id);
+                    if ($janji) {
+                        $janji->update(['status' => 'dibatalkan']);
                         $session->delete();
-                        return "❌ Terjadi kesalahan saat membatalkan janji temu. Silakan coba lagi atau hubungi admin.";
+                        return "✅ Janji temu dengan ID *{$janji_id}* berhasil dibatalkan.";
+                    } else {
+                        $session->delete();
+                        return "❌ Janji temu tidak ditemukan. Pembatalan gagal.";
                     }
-                } elseif ($konfirmasi === 'tidak') {
+                } elseif ($konfirmasi === 'batal') {
                     $session->delete();
-                    return "Pembatalan janji temu dibatalkan.";
+                    return "❌ Pembatalan janji temu dibatalkan.";
                 } else {
-                    return "Pilihan tidak valid. Ketik *YA* untuk konfirmasi pembatalan atau *TIDAK* untuk membatalkan proses.";
+                    return "Pilihan tidak valid. Ketik *YA* untuk konfirmasi atau *BATAL* untuk membatalkan.";
                 }
 
             default:
                 $session->delete();
-                return "⚠️ Sesi pembatalan janji tidak valid. Ketik *batal janji* untuk memulai ulang.";
+                return "⚠️ Sesi tidak valid. Ketik *batal janji* untuk memulai ulang.";
         }
     }
 
-    private function handleCekAntrian(array $numbers): string
+    private function handleCekAntrianBySender(string $sender): string
     {
-        // ... (Kode ini sama persis dengan sebelumnya, tidak ada perubahan)
-        if (empty($numbers)) {
-            return "⚠️ Format tidak valid. Contoh:\n- antrian 1\n- cek antrian 1 dan 2";
+        $pasien = Pasien::where('nomor_telepon', $this->normalizePhoneNumber($sender))->first();
+
+        if (!$pasien) {
+            return "Anda belum memiliki data pasien yang terdaftar dengan nomor WhatsApp ini. Silakan ketik *daftar* untuk mendaftar.";
         }
 
-        $numbers = array_unique($numbers);
-        $response = '';
+        $today = Carbon::today()->toDateString();
+        $antrians = Antrian::with(['jadwal.dokter'])
+            ->where('id_pasien', $pasien->id)
+            ->whereHas('jadwal', function ($query) use ($today) {
+                $query->where('tanggal', $today);
+            })
+            ->whereIn('status', ['menunggu', 'dipanggil', 'dilayani'])
+            ->orderBy('nomor_antrian', 'asc')
+            ->get();
 
-        foreach ($numbers as $nomor) {
-            $antrian = Antrian::with(['pasien', 'jadwal.dokter']) // Pastikan 'jadwal' relasi di Antrian menunjuk ke JadwalDokter
-                ->where('nomor_antrian', $nomor)
-                ->first();
-
-            if ($antrian) {
-                $response .= "🩺 *Antrian #$nomor*\n"
-                    . "Nama: {$antrian->pasien->nama}\n"
-                    . "Dokter: " . ($antrian->jadwal && $antrian->jadwal->dokter ? $antrian->jadwal->dokter->nama : 'N/A') . "\n"
-                    . "Tanggal: " . ($antrian->jadwal ? $antrian->jadwal->tanggal : 'N/A') . "\n"
-                    . "Jam: " . ($antrian->jadwal ? "{$antrian->jadwal->jam_mulai} - {$antrian->jadwal->jam_selesai}" : 'N/A') . "\n"
-                    . "Status: " . $this->formatStatusAntrian($antrian->status) . "\n\n";
-            } else {
-                $response .= "❌ Antrian dengan nomor $nomor tidak ditemukan.\n\n";
-            }
+        if ($antrians->isEmpty()) {
+            return "Anda tidak memiliki antrian aktif hari ini.";
         }
 
-        return $response ?: "❌ Tidak ada data antrian yang ditemukan.";
-    }
-
-    // --- FUNGSI BARU UNTUK CEK JANJI TEMU ---
-    private function handleCekJanji(string $sender, string $rawMessage): string
-    {
-        $messageLower = strtolower($rawMessage);
-        $pasien = null;
-        $response = '';
-
-        // Kasus "cek janji saya"
-        if (str_contains($messageLower, 'janji saya')) {
-            $normalizedSender = $this->normalizePhoneNumber($sender);
-            $pasien = Pasien::where('nomor_telepon', $normalizedSender)->first();
-            if (!$pasien) {
-                return "Maaf, nomor WhatsApp Anda ({$sender}) belum terdaftar sebagai pasien. Silakan daftar dulu dengan mengetik *daftar pasien* atau cek janji dengan ID pasien Anda.";
-            }
+        $response = "📋 *Antrian Anda Hari Ini, " . Carbon::parse($today)->format('d F Y') . ":*\n\n";
+        foreach ($antrians as $antrian) {
+            $dokterNama = $antrian->jadwal && $antrian->jadwal->dokter ? $antrian->jadwal->dokter->nama : 'N/A';
+            $jam = $antrian->jadwal ? "{$antrian->jadwal->jam_mulai} - {$antrian->jadwal->jam_selesai}" : 'N/A';
+            $response .= "--- Antrian #{$antrian->nomor_antrian} ---\n"
+                . "Dokter: *Dr. {$dokterNama}*\n"
+                . "Jam: *{$jam}*\n"
+                . "Status: *{$this->formatStatusAntrian($antrian->status)}*\n\n";
         }
-        // Kasus "cek janji <ID_PASIEN>"
-        else {
-            preg_match('/\d+/', $rawMessage, $matches);
-            $pasienId = $matches[0] ?? null;
-
-            if (!$pasienId) {
-                return "⚠️ Format tidak valid. Gunakan:\n- *cek janji <ID_PASIEN>*\n- *cek janji saya*";
-            }
-            $pasien = Pasien::find($pasienId);
-
-            if (!$pasien) {
-                return "❌ Pasien dengan ID *{$pasienId}* tidak ditemukan. Pastikan ID pasien benar.";
-            }
-        }
-
-        // Jika pasien ditemukan, ambil janji temunya
-        if ($pasien) {
-            // Gunakan nama relasi 'jadwal' sesuai dengan definisi di model Janji Anda
-            $janjis = Janji::with(['jadwal.dokter'])
-                ->where('id_pasien', $pasien->id)
-                // Prioritaskan tanggal hari ini atau mendatang
-                ->orderByRaw('CASE WHEN jadwal_dokters.tanggal >= CURDATE() THEN 0 ELSE 1 END')
-                ->orderBy('jadwal_dokters.tanggal', 'asc')
-                ->orderBy('jadwal_dokters.jam_mulai', 'asc')
-                ->join('jadwal_dokters', 'janji.id_jadwal_dokter', '=', 'jadwal_dokters.id')
-                ->select('janji.*') // Pilih kembali semua kolom dari tabel 'janji'
-                ->get();
-
-            if ($janjis->isEmpty()) {
-                return "Pasien *{$pasien->nama}* (ID: {$pasien->id}) belum memiliki janji temu yang terjadwal.";
-            }
-
-            $response .= "🗓️ *Daftar Janji Temu {$pasien->nama} (ID: {$pasien->id}):*\n\n";
-            foreach ($janjis as $janji) {
-                $statusFormatted = $this->formatStatusJanji($janji->status);
-                // --- PERUBAHAN DI SINI: Gunakan $janji->jadwal ---
-                $tanggalJanji = $janji->jadwal ? Carbon::parse($janji->jadwal->tanggal)->format('d F Y') : 'Tanggal tidak diketahui';
-                $jamJanji = $janji->jadwal ? "Pukul {$janji->jadwal->jam_mulai} - {$janji->jadwal->jam_selesai}" : 'Jam tidak diketahui';
-                $dokterNama = $janji->jadwal && $janji->jadwal->dokter ? $janji->jadwal->dokter->nama : 'Dokter tidak diketahui';
-                // --------------------------------------------------
-
-                $response .= "--- Janji ID: {$janji->id} ---\n"
-                    . "Dokter: *dr. {$dokterNama}*\n"
-                    . "Tanggal: *{$tanggalJanji}*\n"
-                    . "Jam: *{$jamJanji}*\n"
-                    . "Keluhan: {$janji->keluhan}\n"
-                    . "Status: *{$statusFormatted}*\n\n";
-            }
-        } else {
-            return "Terjadi kesalahan dalam menemukan data pasien Anda. Mohon coba lagi.";
-        }
-
         return $response;
+    }
+
+    private function handleCekJanjiBySender(string $sender): string
+    {
+        $pasien = Pasien::where('nomor_telepon', $this->normalizePhoneNumber($sender))->first();
+
+        if (!$pasien) {
+            return "Anda belum memiliki data pasien yang terdaftar dengan nomor WhatsApp ini. Silakan ketik *daftar* untuk mendaftar.";
+        }
+
+        $janjis = Janji::with(['jadwal.dokter'])
+            ->where('id_pasien', $pasien->id)
+            ->whereIn('status', ['menunggu_konfirmasi', 'dikonfirmasi'])
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        if ($janjis->isEmpty()) {
+            return "Anda tidak memiliki janji temu yang aktif.";
+        }
+
+        $response = "🗓️ *Daftar Janji Temu Anda:*\n\n";
+        foreach ($janjis as $janji) {
+            $dokterNama = $janji->jadwal && $janji->jadwal->dokter ? $janji->jadwal->dokter->nama : 'N/A';
+            $tanggal = $janji->jadwal ? Carbon::parse($janji->jadwal->tanggal)->format('d F Y') : 'N/A';
+            $jam = $janji->jadwal ? "{$janji->jadwal->jam_mulai} - {$janji->jadwal->jam_selesai}" : 'N/A';
+
+            $response .= "--- ID Janji: {$janji->id} ---\n"
+                . "Dokter: *Dr. {$dokterNama}*\n"
+                . "Tanggal: *{$tanggal}*\n"
+                . "Jam: *{$jam}*\n"
+                . "Keluhan: *{$janji->keluhan}*\n"
+                . "Status: *{$this->formatStatusJanji($janji->status)}*\n\n";
+        }
+        return $response;
+    }
+
+    private function handleCekAntrianMenunggu(): string
+    {
+        $antrians = Antrian::with(['pasien', 'jadwal.dokter'])
+            ->where('status', 'menunggu')
+            ->orderBy('nomor_antrian', 'asc')
+            ->get();
+
+        if ($antrians->isEmpty()) {
+            return "Tidak ada antrian dengan status 'menunggu' saat ini.";
+        }
+
+        $response = "📋 *Daftar Antrian Status 'Menunggu':*\n\n";
+        foreach ($antrians as $antrian) {
+            $dokterNama = $antrian->jadwal && $antrian->jadwal->dokter ? $antrian->jadwal->dokter->nama : 'N/A';
+            $tanggal = $antrian->jadwal ? Carbon::parse($antrian->jadwal->tanggal)->format('d F Y') : 'N/A';
+            $jam = $antrian->jadwal ? "{$antrian->jadwal->jam_mulai} - {$antrian->jadwal->jam_selesai}" : 'N/A';
+
+            $response .= "--- Antrian #{$antrian->nomor_antrian} ---\n"
+                . "Pasien: *{$antrian->pasien->nama}*\n"
+                . "Dokter: *Dr. {$dokterNama}*\n"
+                . "Tanggal Jadwal: *{$tanggal}*\n"
+                . "Jam Jadwal: *{$jam}*\n"
+                . "Status: *{$this->formatStatusAntrian($antrian->status)}*\n\n";
+        }
+        return $response;
+    }
+
+    private function handleCekAntrianHariIni(): string
+    {
+        $today = Carbon::today()->toDateString();
+        $antrians = Antrian::with(['pasien', 'jadwal.dokter'])
+            ->whereHas('jadwal', function ($query) use ($today) {
+                $query->where('tanggal', $today);
+            })
+            ->whereIn('status', ['menunggu', 'dipanggil', 'dilayani'])
+            ->orderBy('nomor_antrian', 'asc')
+            ->get();
+
+        if ($antrians->isEmpty()) {
+            return "Tidak ada antrian aktif untuk hari ini, " . Carbon::parse($today)->format('d F Y') . ".";
+        }
+
+        $response = "📋 *Daftar Antrian Aktif Hari Ini (" . Carbon::parse($today)->format('d F Y') . "):*\n\n";
+        foreach ($antrians as $antrian) {
+            $dokterNama = $antrian->jadwal && $antrian->jadwal->dokter ? $antrian->jadwal->dokter->nama : 'N/A';
+            $jam = $antrian->jadwal ? "{$antrian->jadwal->jam_mulai} - {$antrian->jadwal->jam_selesai}" : 'N/A';
+
+            $response .= "--- Antrian #{$antrian->nomor_antrian} ---\n"
+                . "Pasien: *{$antrian->pasien->nama}*\n"
+                . "Dokter: *Dr. {$dokterNama}*\n"
+                . "Jam: *{$jam}*\n"
+                . "Status: *{$this->formatStatusAntrian($antrian->status)}*\n\n";
+        }
+        return $response;
+    }
+
+    // --- FUNGSI BARU: CEK JADWAL DOKTER HARI INI ---
+    private function handleCekJadwalDokterHariIni(): string
+    {
+        $today = Carbon::today()->toDateString();
+        $jadwals = JadwalDokter::with('dokter')
+            ->where('tanggal', $today)
+            ->orderBy('id_dokter', 'asc')
+            ->orderBy('jam_mulai', 'asc')
+            ->get();
+
+        if ($jadwals->isEmpty()) {
+            return "Tidak ada jadwal dokter untuk hari ini, " . Carbon::parse($today)->format('d F Y') . ".";
+        }
+
+        $response = "🗓️ *Jadwal Dokter Hari Ini (" . Carbon::parse($today)->format('d F Y') . "):*\n\n";
+        $currentDokter = null;
+
+        foreach ($jadwals as $jadwal) {
+            if ($jadwal->dokter) {
+                if ($currentDokter !== $jadwal->dokter->nama) {
+                    $response .= "--- *Dr. {$jadwal->dokter->nama}* ---\n";
+                    $currentDokter = $jadwal->dokter->nama;
+                }
+                $response .= "Pukul: *{$jadwal->jam_mulai} - {$jadwal->jam_selesai}*\n\n";
+            } else {
+                Log::warning('Jadwal ID ' . $jadwal->id . ' tidak memiliki relasi dokter.');
+            }
+        }
+        return $response;
+    }
+    // --- AKHIR FUNGSI ---
+
+
+    private function formatStatusAntrian(string $status): string
+    {
+        switch ($status) {
+            case 'menunggu':
+                return 'Menunggu';
+            case 'dipanggil':
+                return 'Dipanggil';
+            case 'dilayani':
+                return 'Dilayani';
+            case 'selesai':
+                return 'Selesai';
+            case 'dibatalkan':
+                return 'Dibatalkan';
+            default:
+                return ucfirst($status);
+        }
     }
 
     private function formatStatusJanji(string $status): string
     {
-        $statusMap = [
-            'menunggu_konfirmasi' => '⏳ Menunggu Konfirmasi',
-            'terjadwal' => '✅ Terjadwal',
-            'selesai' => '🏁 Selesai',
-            'batal' => '❌ Dibatalkan'
-        ];
-        return $statusMap[strtolower($status)] ?? $status;
+        switch ($status) {
+            case 'menunggu_konfirmasi':
+                return 'Menunggu Konfirmasi';
+            case 'dikonfirmasi':
+                return 'Dikonfirmasi';
+            case 'selesai':
+                return 'Selesai';
+            case 'dibatalkan':
+                return 'Dibatalkan';
+            default:
+                return ucfirst($status);
+        }
     }
 
-    private function formatStatusAntrian(string $status): string
-    {
-        $statusMap = [
-            'menunggu' => '⏳ Menunggu',
-            'dipanggil' => '🔊 Dipanggil',
-            'dilayani' => '🩺 Sedang Dilayani',
-            'selesai' => '✅ Selesai',
-            'batal' => '❌ Dibatalkan'
-        ];
 
-        return $statusMap[strtolower($status)] ?? $status;
+    private function sendReply(string $to, string $message): void
+    {
+        $fonnteToken = env('FONNTE_API_KEY');
+        if (!$fonnteToken) {
+            Log::error('❌ FONNTE_API_KEY tidak ditemukan di .env');
+            return;
+        }
+
+        Http::withHeaders([
+            'Authorization' => $fonnteToken
+        ])->post('https://api.fonnte.com/send', [
+            'target' => $to,
+            'message' => $message,
+        ]);
+
+        Log::info('📤 Balasan terkirim:', ['target' => $to, 'message' => $message]);
     }
 
     private function handleFallback(): string
     {
-        return "⚠️ Maaf, saya tidak mengenali perintah Anda.\n\n"
-            . "📋 *Perintah yang tersedia:*\n"
-            . "- *daftar pasien* - Mulai pendaftaran pasien baru\n"
-            . "- *buat janji* - Buat janji temu dengan dokter\n"
-            . "- *cek janji <ID_PASIEN>* - Cek janji temu berdasarkan ID pasien\n"
-            . "- *cek janji saya* - Cek janji temu Anda (berdasarkan nomor WA Anda)\n" // Perbarui pesan ini
-            . "- *antrian [nomor]* - Cek status antrian\n"
-            . "- *cek antrian [nomor]* - Cek status antrian\n\n"
-            . "Contoh:\n"
-            . "- `daftar pasien`\n"
-            . "- `buat janji`\n"
-            . "- `cek janji 123`\n"
-            . "- `cek janji saya`\n"
-            . "- `batal janji`\n"
-            . "- `antrian 5`\n";
-    }
-
-    private function sendReply(string $sender, string $message): void
-    {
-        try {
-            $response = Http::withHeaders([
-                'Authorization' => env('FONNTE_API_KEY'),
-            ])->timeout(10)->post('https://api.fonnte.com/send', [
-                'target' => $sender,
-                'message' => $message,
-            ]);
-
-            Log::info('Response dari Fonnte:', $response->json());
-        } catch (\Exception $e) {
-            Log::error('Gagal mengirim pesan ke Fonnte: ' . $e->getMessage());
-        }
+        return "Halo! 👋 Saya adalah Bot Klinik Sehat Selalu. Berikut adalah beberapa perintah yang bisa Anda gunakan:\n\n"
+            . "📝 *DAFTAR PASIEN* - Untuk mendaftar sebagai pasien baru.\n"
+            . "🗓️ *BUAT JANJI* - Untuk membuat janji temu dengan dokter.\n"
+            . "👀 *CEK JANJI* atau *JANJI SAYA* - Untuk melihat daftar janji temu Anda yang aktif.\n"
+            . "❌ *BATAL JANJI* - Untuk membatalkan janji temu yang sudah dibuat.\n"
+            . "📋 *CEK ANTRIAN SAYA* - Untuk melihat antrian Anda hari ini.\n"
+            . "📋 *CEK ANTRIAN MENUNGGU* - Untuk melihat semua antrian dengan status 'menunggu'.\n"
+            . "📋 *CEK ANTRIAN HARI INI* - Untuk melihat semua antrian aktif hari ini.\n"
+            . "👩‍⚕️ *CEK JADWAL DOKTER HARI INI* - Untuk melihat jadwal praktek dokter hari ini.\n\n"
+            . "Silakan ketik perintah yang Anda inginkan.";
     }
 }

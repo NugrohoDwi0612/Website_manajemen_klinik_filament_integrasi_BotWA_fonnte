@@ -57,8 +57,8 @@ class JanjiResource extends Resource
                                 return [$jadwal->id => "dr. {$doctorName} - {$date} ({$time})"];
                             });
                     })
-                    ->searchable() // Memungkinkan pencarian jadwal
-                    ->preload() // Memuat semua jadwal di awal (hati-hati jika data sangat banyak)
+                    ->searchable()
+                    ->preload()
                     ->required()
                     ->columnSpanFull(),
 
@@ -77,7 +77,7 @@ class JanjiResource extends Resource
                         'batal' => 'Dibatalkan',
                     ])
                     ->required()
-                    ->default('menunggu_konfirmasi') // Default status saat membuat janji baru
+                    ->default('menunggu_konfirmasi')
                     ->columnSpanFull(),
             ]);
     }

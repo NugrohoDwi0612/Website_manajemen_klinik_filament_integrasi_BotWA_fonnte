@@ -2,8 +2,13 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Poliklinik;
+use App\Models\RekamMedis;
+use App\Models\JadwalDokter;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Dokter extends Model
 {
@@ -20,19 +25,19 @@ class Dokter extends Model
     ];
 
     // Relasi ke Poliklinik
-    public function poliklinik()
+    public function poliklinik(): BelongsTo
     {
         return $this->belongsTo(Poliklinik::class, 'id_poliklinik');
     }
 
     // Relasi ke JadwalDokter
-    public function jadwalDokters()
+    public function jadwalDokters(): HasMany
     {
         return $this->hasMany(JadwalDokter::class, 'id_dokter');
     }
 
     // Relasi ke RekamMedis
-    public function rekamMedis()
+    public function rekamMedis(): HasMany
     {
         return $this->hasMany(RekamMedis::class, 'id_dokter');
     }

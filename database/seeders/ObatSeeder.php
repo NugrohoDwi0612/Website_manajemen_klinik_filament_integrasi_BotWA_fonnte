@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\Obat;
-use Illuminate\Database\Seeder;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 class ObatSeeder extends Seeder
 {
@@ -13,16 +13,12 @@ class ObatSeeder extends Seeder
      */
     public function run(): void
     {
-        Obat::create([
-            'nama_obat' => 'Paracetamol',
-            'stok' => 100,
-            'harga' => 5000,
-        ]);
-
-        Obat::create([
-            'nama_obat' => 'Amoxicillin',
-            'stok' => 50,
-            'harga' => 10000,
+        DB::table('obats')->insert([
+            ['nama_obat' => 'Paracetamol 500mg', 'stok' => 500, 'harga' => 2000, 'tanggal_kadaluarsa' => '2025-12-10', 'kategori_obat' => 'Panas', 'created_at' => now(), 'updated_at' => now()],
+            ['nama_obat' => 'Amoxicillin 250mg', 'stok' => 300, 'harga' => 3500,  'tanggal_kadaluarsa' => '2026-12-10', 'kategori_obat' => 'Panas', 'created_at' => now(), 'updated_at' => now()],
+            ['nama_obat' => 'Vitamin C 100mg', 'stok' => 1000, 'harga' => 1500,  'tanggal_kadaluarsa' => '2025-12-10', 'kategori_obat' => 'Panas', 'created_at' => now(), 'updated_at' => now()],
+            ['nama_obat' => 'Antasida Doen', 'stok' => 400, 'harga' => 2500,  'tanggal_kadaluarsa' => '2023-12-10', 'kategori_obat' => 'Panas', 'created_at' => now(), 'updated_at' => now()],
+            ['nama_obat' => 'Sirup Batuk Anak', 'stok' => 150, 'harga' => 15000,  'tanggal_kadaluarsa' => '2025-12-10', 'kategori_obat' => 'Panas', 'created_at' => now(), 'updated_at' => now()],
         ]);
     }
 }

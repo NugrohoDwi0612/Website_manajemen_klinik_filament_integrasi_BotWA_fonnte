@@ -13,21 +13,27 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $this->call(
+            [
+                // Tabel Tanpa Dependensi atau Dependensi Awal
+                UserSeeder::class,
+                PasienSeeder::class,
+                PoliklinikSeeder::class, // PENTING: Panggil PoliklinikSeeder sebelum DokterSeeder
+                ObatSeeder::class,
 
-        User::factory()->create([
-            'name' => 'admin',
-            'email' => 'admin@gmail.com',
-            'password' => '$2y$12$lDFdpmvQup71QD2XyM4cfuNkl7zeUSxAV5QbD2PNhc3RmHEMXCESq',
-        ]);
+                // Tabel dengan Dependensi Menengah
+                DokterSeeder::class, // Sekarang Dokter bergantung pada Poliklinik dan Spesialisasi
+                JadwalDokterSeeder::class,
+                JanjiSeeder::class,
 
-        $this->call([
-            PasienSeeder::class,
-            RekamMedisSeeder::class,
-            ObatSeeder::class,
-            ResepSeeder::class,
-            InventarisSeeder::class,
-            PoliklinikSeeder::class,
-        ]);
+                // Tabel dengan Dependensi Lanjut
+                AntrianSeeder::class,
+                RekamMedisSeeder::class,
+
+                // Tabel dengan Dependensi Akhir
+                ResepSeeder::class,
+                PembayaranSeeder::class,
+            ]
+        );
     }
 }

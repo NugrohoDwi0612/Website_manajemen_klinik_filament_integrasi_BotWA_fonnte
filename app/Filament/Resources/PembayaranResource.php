@@ -67,9 +67,8 @@ class PembayaranResource extends Resource
                             ->label('Status Pembayaran')
                             ->options([
                                 'pending' => 'Pending',
-                                'paid' => 'Lunas',
-                                'canceled' => 'Dibatalkan',
-                                'partial' => 'Sebagian',
+                                'lunas' => 'Lunas',
+                                'batal' => 'Batal',
                             ])
                             ->default('pending')
                             ->required(),
@@ -114,9 +113,8 @@ class PembayaranResource extends Resource
                     ->badge()
                     ->color(fn(string $state): string => match ($state) {
                         'pending' => 'warning',
-                        'paid' => 'success',
-                        'canceled' => 'danger',
-                        'partial' => 'info',
+                        'lunas' => 'success',
+                        'batal' => 'danger',
                     })
                     ->sortable(),
                 TextColumn::make('metode_pembayaran')

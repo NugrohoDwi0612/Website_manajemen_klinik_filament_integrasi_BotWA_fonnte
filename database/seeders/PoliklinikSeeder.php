@@ -18,5 +18,15 @@ class PoliklinikSeeder extends Seeder
             'nama_poliklinik' => 'Poli Gigi',
             'deskripsi' => 'Pelayanan kesehatan gigi dan mulut',
         ]);
+
+        Poliklinik::create([
+            'nama_poliklinik' => 'Poli Anak',
+            'deskripsi' => 'Pelayanan kesehatan anak',
+        ]);
+
+        Poliklinik::create([
+            'nama_poliklinik' => 'Poli Penyakit Dalam',
+            'deskripsi' => 'Pelayanan kesehatan penyakit dalam',
+        ]);
     }
 }
